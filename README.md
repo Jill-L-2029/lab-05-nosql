@@ -42,72 +42,120 @@ This repository already includes a `.gitignore` that excludes `.venv/`, `.vscode
 
 ## Case Study 1: The Bookstore’s New Inventory System (mongosh)
 
-A local bookstore owner has been struggling to track authors and books on spreadsheets. They’ve heard that document databases are great for semi-structured data and want to try MongoDB. They’ve recruited you to design a small “authors” collection and show them how to query it from the shell. No rigid tables—just documents that can grow over time.
+A local bookstore owner has been struggling to track authors and books on spreadsheets. They’ve heard that document databases are great for semi-structured data and want to try MongoDB.
 
-You’ll use `mongosh` to create a database, add author documents with nested “bio” fields, run updates, and capture your commands in a script they can reuse.
+Authors and books are a many-to-many relationship: one author can write many books, and one book can have many authors. Create two collections, `authors` and `books`.
 
-### Create, query, and save the collection
+An author document looks like this:
+
+- `_id`: an id you choose, such as `"author_001"`
+- `name`
+- `nationality`
+- `bio`: a subdocument embedded on the author, not a separate collection
+  - `short`
+  - `long`
+
+A book document looks like this:
+
+- `title`
+- `published_year`: a year, such as `1813`
+- `author_ids`: one or more author `_id` values, such as `["author_001", "author_002"]`
+
+The starter data is in [`authors.json`](authors.json) and [`books.json`](books.json).
+
+- Jane Austen is `author_001`
+- Neil Gaiman is `author_002`
+- Terry Pratchett is `author_003`
+- The book *Good Omens* (in `books.json`) lists both `author_002` and `author_003` in `author_ids`
+
+You will load those files into new collections, list what is there, add two books of your own, and add any author those books need who is not already in the `authors` collection. **When adding authors, give each one a unique `_id`, such as `"author_004"`, so it does not collide with the existing ones.**
+
+### Load, extend, and query
+
+Run the load from the repository root so `authors.json` and `books.json` resolve. `fs` is built into `mongosh`.
 
 1. Connect to MongoDB Atlas using `mongosh` and your Atlas credentials (see [Get Connection String](https://github.com/ksiller/DS2022/blob/main/setup/mongodb.md#3-get-connection-string-url) in the setup instructions).
 
-2. Create a new database named `bookstore`. In MongoDB, you switch to (or create) a database with `use <dbname>`.
+2. Create a new database named `bookstore`. In MongoDB, you switch to (or create) a database with `use bookstore`.
 
-3. Insert the following document into the `authors` collection. Note the nested `bio` object with `short` and `long` fields. This is the kind of flexible structure document databases handle well.
+3. Drop any existing `authors` collection so a second run does not insert the same authors twice. Then load `authors.json`. Each document sets `_id` to a value such as `"author_001"`. That id is reloaded with the file. MongoDB generates a hex `_id` only when you leave `_id` out.
 
 ```javascript
-db.authors.insertOne({
-  "name": "Jane Austen",
-  "nationality": "British",
-  "bio": {
-    "short": "English novelist known for novels about the British landed gentry.",
-    "long": "Jane Austen was an English novelist whose works critique and comment upon the British landed gentry at the end of the 18th century. Her most famous novels include Pride and Prejudice, Sense and Sensibility, and Emma, celebrated for their wit, social commentary, and masterful character development."
-  }
-})
+db.authors.drop()
+db.authors.insertMany(JSON.parse(fs.readFileSync("authors.json", "utf8")))
 ```
 
-4. Update that document to add a `birthday` field with an appropriate value (for example, `"1775-12-16"` or a date type). Use `updateOne` with a filter and `$set`.
+4. Initialize a `books` collection with `books.json` in the same manner.
 
-5. Add four more author documents of your choice, using the same structure: `name`, `nationality`, `bio` (with nested `short` and `long`), and `birthday`. Vary nationalities so you can practice filtering. You can do this sequentially with `insertOne` or in bulk with `insertMany`.
+```javascript
+db.books.drop()
+db.books.insertMany(JSON.parse(fs.readFileSync("books.json", "utf8")))
+```
 
-6. Run a query that returns the total number of documents in `authors` (for example, `countDocuments()`).
+5. List every author and every book.
 
-7. Run a query that returns all documents where `nationality` is `"British"`, sorted by `name` in ascending order. Check your spelling (for example, `"British"`, not `"Bristish"`) so the filter matches.
+```javascript
+db.authors.find()
+db.books.find()
+```
 
-8. In the `mongosh` shell, run `history()` to view your recent commands. Copy the commands from steps 2–7 above into one file so the bookstore owner can rerun them: switch to the database, insert the first author, update that document, insert four more authors, count the documents, and find British authors sorted by name.
+6. Insert two new books of your choosing. Each book needs:
 
-   Create a file named `bookstore.js` in the top-level directory of your cloned repository with this structure:
+   - `title`
+   - `published_year` (a year such as `1999`)
+   - `author_ids` with one or more author `_id` values
+
+   An id in `author_ids` may already be in the loaded data, or it may be someone you are about to add. At least one author across the two books must be new, so the next step inserts at least one author. Pick a new `_id` that is not already used, such as `"author_004"`.
+
+7. Add every missing author of those two books. An author is missing when no document in the `authors` collection has that `_id`. MongoDB does not check that this author document exists when you save the book, so add the missing authors yourself. Each new `_id` must be unique.
+
+   Insert each missing author with:
+
+   - `_id`: the same id the book already stores in `author_ids`
+   - `name`
+   - `nationality`
+   - `bio` (`short` and `long`)
+
+8. Filter books by a list of authors. Include at least one author you added in step 7 and at least one author from the loaded files. A book matches when any value in `author_ids` equals an author’s `_id`.
+
+```javascript
+db.books.find({ author_ids: { $in: ["author_001", "author_004"] } })
+```
+
+9. Copy the commands from steps 2–8 into `bookstore.js` in the top-level directory of your clone. Label each part with a comment. The owner reruns that file instead of `history()`.
 
 ```javascript
 // Step 2: use database
 // paste your use bookstore command here
 
-// Step 3: insert first author
-// paste your insertOne command here
+// Step 3: load authors.json
+// paste your drop and insertMany commands here
 
-// Step 4: update to add birthday
-// paste your updateOne command here
+// Step 4: load books.json
+// paste your drop and insertMany commands here
 
-// Step 5: insert four more authors
-// paste your insertMany or insertOne commands here
+// Step 5: list authors and books
+// paste your find commands here
 
-// Step 6: total count
-// paste your countDocuments() command here
+// Step 6: insert two new books
+// paste your insert commands here
 
-// Step 7: British authors, sorted by name
-// paste your find and sort command here
+// Step 7: add missing authors
+// paste your insert commands here
+
+// Step 8: filter books by a list of authors
+// paste your find command here
 ```
 
-   Use comments so each section is clearly labeled. The owner does not need to run `history()`. They can run the pasted commands in order from `bookstore.js`.
-
-**Success:** You’ve designed a small document model and used the MongoDB shell to create, update, query, and sort documents. Next, you’ll do the same kind of work from Python.
+**Success:** You’ve loaded a many-to-many bookstore, added books and any missing authors, and filtered books by several authors. Next, you’ll print that same join from Python.
 
 ---
 
 ## Case Study 2: Bookstore Inventory from Python (PyMongo)
 
-The bookstore owner is impressed by the shell demo. Now they want a simple Python script that connects to the same Atlas cluster, reads from the `bookstore` database, and prints a short report (for example, how many authors, and a list of names and nationalities). This way they can eventually hook scripts into their workflow or a small dashboard.
+The bookstore owner is impressed by the shell demo. Now they want a Python script that connects to the same Atlas cluster and prints a short report: for each author in a list, the books linked to that author, with title and publication year. This way they can eventually hook scripts into their workflow or a small dashboard.
 
-**Your task:** Write a Python script that uses PyMongo to connect to MongoDB Atlas, targets the `bookstore` database and `authors` collection from Case Study 1, and produces a small, readable report. Follow the scripting and Python best practices from Lab 03 and Lab 04.
+**Your task:** Write a Python script that uses PyMongo to connect to MongoDB Atlas, reads the `bookstore` database from Case Study 1, and prints that joined report. Follow the scripting and Python best practices from Lab 03 and Lab 04.
 
 ### Step 1: Environment and dependencies
 
@@ -126,9 +174,27 @@ Create `src/nosql_lab/bookstore_report.py` in the package directory created by `
 - Wrap the code that opens, uses, and closes the MongoDB client in a `try`/`except` block, and close the client when you are done.
 - Define a `main` function that:
   - Connects to MongoDB Atlas with `pymongo.MongoClient`, passing the connection URL and the username and password from the environment variables.
-  - Selects the `bookstore` database and the `authors` collection.
-  - Prints a short report that includes the total number of author documents and, for each author, at least the `name` and `nationality` (optionally `birthday` or `bio.short`). Format the output so it is easy to read: one line per author, or a few lines per author.
+  - Selects the `bookstore` database and the `authors` and `books` collections.
+  - Uses a list of author `_id` values that includes at least one author you added in step 7 and at least one author from the loaded files.
+  - Prints the total number of authors in that list. Then, for each author, prints the author name and, under that name, each linked book’s title and publication year (`published_year`). A co-authored book appears under each of its authors. Format the output so it is easy to read.
 - Call `main()` from an `if __name__ == "__main__":` block so it runs only when the file is executed directly. See [class/03-scripting](https://github.com/ksiller/DS2022/blob/main/class/03-scripting/README.md) for how that guard works.
+
+For a list that includes `author_002`, `author_003`, and one author you added, the report should look like this. Your own author and books will differ. *Good Omens* is listed under both of its authors.
+
+```text
+Authors: 3
+
+Neil Gaiman
+  Good Omens (1990)
+  American Gods (2001)
+
+Terry Pratchett
+  Good Omens (1990)
+  The Colour of Magic (1983)
+
+Your Author
+  Your New Book (1999)
+```
 
 Run the script from the repository root with `uv run`, so Python uses the project environment. Confirm that it connects to Atlas and prints the report from the documents you added in Case Study 1:
 
@@ -136,9 +202,9 @@ Run the script from the repository root with `uv run`, so Python uses the projec
 uv run python src/nosql_lab/bookstore_report.py
 ```
 
-**Hint:** Use `collection.count_documents({})` for the total count and `collection.find({})` (with an optional projection) to iterate over authors.
+**Hint:** Use `count_documents` for the number of authors in your list. Resolve each author’s books from `author_ids` on the book, not from a second hardcoded list of titles. `books.find({ "author_ids": author["_id"] })` returns every book that lists that author’s `_id`. Print `title` and `published_year` for each one.
 
-**Success:** You’ve connected to the same MongoDB data from Python and produced a simple report. That’s the same pattern used in larger systems: shell for ad hoc operations, Python (or another driver) for automation and applications.
+**Success:** You’ve connected to the same MongoDB data from Python and printed, for each author, the title and publication year of each linked book. That’s the same pattern used in larger systems: shell for ad hoc operations, Python (or another driver) for automation and applications.
 
 ---
 
@@ -146,13 +212,14 @@ uv run python src/nosql_lab/bookstore_report.py
 
 By completing this lab, you have:
 
-- Used the MongoDB shell (`mongosh`) to create a database and collection and to insert, update, and query documents.
-- Practiced filtering and sorting documents and capturing shell commands in a script file.
+- Used the MongoDB shell (`mongosh`) to load documents, insert them, and query across collections.
+- Stored a many-to-many relationship by setting each author’s `_id` to a value such as `"author_001"` and listing those ids in `author_ids` on books, and embedded `bio` on the author instead of storing a `bio_id`.
+- Filtered books by a list of authors and captured those shell commands in a script file.
 - Created a reproducible Python environment with `uv` and installed PyMongo into it.
 - Connected to MongoDB Atlas from Python with PyMongo and environment variables.
-- Written a script that follows scripting best practices (shebang, docstrings, comments, logging, and an entry-point guard) and produces a report from a document collection.
+- Written a script that follows scripting best practices (shebang, docstrings, comments, logging, and an entry-point guard) and, for each author, prints the title and publication year of each linked book.
 
-These skills translate directly to real-world use: document stores like MongoDB are common in data pipelines, APIs, and applications where schema flexibility and nested data are useful.
+These skills translate directly to real-world use: document stores like MongoDB are common in data pipelines, APIs, and applications where nested data and references between documents are both useful.
 
 ---
 
@@ -164,6 +231,8 @@ Your repository should look roughly like this (other `uv init` files are fine to
 lab-05-nosql/
 ├── .gitignore
 ├── README.md
+├── authors.json
+├── books.json
 ├── bookstore.js
 ├── pyproject.toml
 ├── uv.lock
